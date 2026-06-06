@@ -23,6 +23,7 @@ import { songLinkService } from "./songlink";
 import { eventBus } from "./eventBus";
 import { extractPlaylist as ytdlpExtractPlaylist } from "./ytdlp";
 import { M3UEntry } from "./m3uParser";
+import { CsvTrackEntry } from "./csvParser";
 import {
   normalizeString,
   normalizeApostrophes,
@@ -3337,6 +3338,84 @@ class SpotifyImportService {
         });
       }
     })().catch((e) => logger?.error("[Preview Job] Unhandled:", e));
+
+    return { jobId };
+  }
+
+  /**
+   * Start a preview job from a parsed CSV export (Exportify / TuneMyMusic / etc.).
+   *
+   * Mirrors startPreviewJob but skips the platform fetch entirely — the tracklist
+   * comes straight from the CSV. The resulting preview is stored under the same
+   * Redis key and SSE events as the URL path, so the frontend preview→import flow
+   * is identical (the import step uses previewJobId; no source URL is needed).
+   */
+  async startCsvPreviewJob(
+    userId: string,
+    playlistName: string,
+    entries: CsvTrackEntry[],
+  ): Promise<{ jobId: string }> {
+    const jobId = randomUUID();
+
+    const tracks: SpotifyTrack[] = entries.map((e, i) => ({
+      spotifyId: e.trackId || `csv-${i}`,
+      title: e.title,
+      artist: e.artist,
+      artistId: "",
+      album: e.album || "Unknown Album",
+      albumId: "",
+      isrc: e.isrc,
+      durationMs: e.durationMs || 0,
+      trackNumber: 0,
+      previewUrl: null,
+      coverUrl: null,
+    }));
+
+    const playlistMeta = {
+      id: `csv-${jobId}`,
+      name: playlistName,
+      description: null,
+      owner: "CSV Import",
+      imageUrl: null,
+      trackCount: tracks.length,
+    };
+
+    (async () => {
+      try {
+        eventBus.emit({
+          type: "preview:progress",
+          userId,
+          payload: { jobId, phase: "matching", message: "Matching tracks to library..." },
+        });
+
+        const preview = await this.buildPreviewFromTracklist(tracks, playlistMeta, "CSV");
+
+        await redisClient.setex(
+          PREVIEW_JOB_KEY(jobId),
+          PREVIEW_JOB_TTL,
+          JSON.stringify({ status: "completed", preview, userId }),
+        ).catch((e) => logger.error("[CSV Preview Job] Failed to persist result to Redis:", e));
+
+        eventBus.emit({
+          type: "preview:complete",
+          userId,
+          payload: { jobId, preview },
+        });
+      } catch (error: any) {
+        logger?.error("[CSV Preview Job] Failed:", error);
+        const userMessage = error.message || "CSV import failed";
+        await redisClient.setex(
+          PREVIEW_JOB_KEY(jobId),
+          PREVIEW_JOB_TTL,
+          JSON.stringify({ status: "failed", error: userMessage, userId }),
+        ).catch((e) => logger.error("[CSV Preview Job] Failed to persist error state to Redis:", e));
+        eventBus.emit({
+          type: "preview:complete",
+          userId,
+          payload: { jobId, error: userMessage },
+        });
+      }
+    })().catch((e) => logger?.error("[CSV Preview Job] Unhandled:", e));
 
     return { jobId };
   }

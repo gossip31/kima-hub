@@ -15,6 +15,7 @@ import {
     ChevronDown,
     ChevronUp,
     Zap,
+    Upload,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
@@ -128,6 +129,8 @@ function ImportPlaylistPageContent() {
     const [expandedSection, setExpandedSection] = useState<
         "matched" | "download" | "notfound" | null
     >("matched");
+    const [isDragging, setIsDragging] = useState(false);
+    const csvInputRef = useRef<HTMLInputElement>(null);
 
 
     // Pre-fill URL from query params and reconnect to active import if one exists
@@ -327,6 +330,39 @@ function ImportPlaylistPageContent() {
         }
     };
 
+    // Import from a CSV export (Exportify / TuneMyMusic / Soundiiz).
+    // Uploads the file, then reuses the same preview → import flow as a URL import.
+    const handleCsvFile = async (file: File) => {
+        const lower = file.name.toLowerCase();
+        if (!lower.endsWith(".csv") && !lower.endsWith(".tsv")) {
+            toast.error("Please drop a .csv file exported from your playlist");
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            const defaultName = file.name.replace(/\.(csv|tsv)$/i, "").trim();
+            const { jobId } = await api.importCsv(file, defaultName);
+            setUrl("");
+            setPreviewJobId(jobId);
+            setStep("previewing");
+        } catch (err) {
+            const message =
+                err instanceof Error ? err.message : "Failed to read CSV";
+            toast.error(message);
+        } finally {
+            setIsLoading(false);
+            if (csvInputRef.current) csvInputRef.current.value = "";
+        }
+    };
+
+    const handleCsvDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file) handleCsvFile(file);
+    };
+
     // Start import
     const handleStartImport = async () => {
         if (!preview) return;
@@ -346,7 +382,7 @@ function ImportPlaylistPageContent() {
                 "/spotify/import",
                 {
                     spotifyPlaylistId: preview.playlist.id,
-                    url,
+                    url: url || undefined,
                     playlistName: playlistName || preview.playlist.name,
                     albumMbidsToDownload: Array.from(selectedMbids),
                     previewJobId: previewJobId ?? undefined,
@@ -456,7 +492,7 @@ function ImportPlaylistPageContent() {
                             Import Playlist
                         </h1>
                         <p className="text-sm text-gray-400">
-                            Import from Spotify or Deezer
+                            Import from Spotify, Deezer, or a CSV export
                         </p>
                     </div>
                 </div>
@@ -534,6 +570,60 @@ function ImportPlaylistPageContent() {
                                 )}
                             </button>
                         </div>
+
+                        {/* Divider */}
+                        <div className="flex items-center gap-3 py-1">
+                            <div className="flex-1 h-px bg-white/10" />
+                            <span className="text-xs text-gray-500">or</span>
+                            <div className="flex-1 h-px bg-white/10" />
+                        </div>
+
+                        {/* CSV drag-and-drop */}
+                        <div
+                            onDragOver={(e) => {
+                                e.preventDefault();
+                                setIsDragging(true);
+                            }}
+                            onDragLeave={(e) => {
+                                e.preventDefault();
+                                setIsDragging(false);
+                            }}
+                            onDrop={handleCsvDrop}
+                            onClick={() => csvInputRef.current?.click()}
+                            className={`rounded-lg border-2 border-dashed px-4 py-8 text-center cursor-pointer transition-colors ${
+                                isDragging
+                                    ? "border-[#ecb200] bg-[#ecb200]/10"
+                                    : "border-white/15 hover:border-white/30 hover:bg-white/5"
+                            }`}
+                        >
+                            <input
+                                ref={csvInputRef}
+                                type="file"
+                                accept=".csv,.tsv,text/csv"
+                                className="hidden"
+                                onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleCsvFile(file);
+                                }}
+                            />
+                            <Upload className="w-7 h-7 text-gray-400 mx-auto mb-2" />
+                            <p className="text-sm text-gray-300 font-medium">
+                                Drop a playlist CSV here, or click to browse
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1">
+                                Export from{" "}
+                                <a
+                                    href="https://exportify.net"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="text-[#ecb200] hover:underline"
+                                >
+                                    Exportify
+                                </a>
+                                , TuneMyMusic or Soundiiz · ISRC matched when present
+                            </p>
+                        </div>
                     </div>
                 )}
 
@@ -588,17 +678,19 @@ function ImportPlaylistPageContent() {
                                     </p>
                                 )}
                             </div>
-                            <a
-                                href={
-                                    url ||
-                                    `https://open.spotify.com/playlist/${preview.playlist.id}`
-                                }
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-gray-400 hover:text-[#1DB954] transition-colors"
-                            >
-                                <ExternalLink className="w-4 h-4" />
-                            </a>
+                            {!preview.playlist.id.startsWith("csv-") && (
+                                <a
+                                    href={
+                                        url ||
+                                        `https://open.spotify.com/playlist/${preview.playlist.id}`
+                                    }
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-gray-400 hover:text-[#1DB954] transition-colors"
+                                >
+                                    <ExternalLink className="w-4 h-4" />
+                                </a>
+                            )}
                         </div>
 
                         {/* Summary Stats */}

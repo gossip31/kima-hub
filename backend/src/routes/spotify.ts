@@ -13,6 +13,7 @@ import { deezerService } from "../services/deezer";
 import { songLinkService } from "../services/songlink";
 import { readSessionLog, getSessionLogPath } from "../utils/playlistLogger";
 import { parseM3U } from "../services/m3uParser";
+import { parseCsvTracks } from "../services/csvParser";
 
 const router = Router();
 
@@ -25,6 +26,20 @@ const m3uUpload = multer({
             cb(null, true);
         } else {
             cb(new Error("Only .m3u and .m3u8 files are accepted"));
+        }
+    },
+});
+
+const csvUpload = multer({
+    storage: multer.memoryStorage(),
+    // Playlist CSV exports can carry many columns per row; allow a little more headroom than M3U.
+    limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+    fileFilter: (_req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        if ([".csv", ".tsv"].includes(ext)) {
+            cb(null, true);
+        } else {
+            cb(new Error("Only .csv and .tsv files are accepted"));
         }
     },
 });
@@ -427,6 +442,59 @@ router.post("/import/m3u", m3uImportLimiter, (req, res, next) => {
             return res.status(400).json({ error: error.message });
         }
         safeError(res, "M3U import", error);
+    }
+});
+
+/**
+ * POST /api/spotify/import/csv
+ * Import a playlist from a CSV export (Exportify / TuneMyMusic / Soundiiz).
+ * Parses the file into a tracklist and runs it through the shared preview
+ * pipeline, returning a previewJobId the client polls like a URL import.
+ */
+router.post("/import/csv", m3uImportLimiter, (req, res, next) => {
+    csvUpload.single("file")(req, res, (err) => {
+        if (err) {
+            return res.status(400).json({ error: err.message });
+        }
+        next();
+    });
+}, async (req, res) => {
+    try {
+        if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+        if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+        // Fall back to the file name (minus extension) when no name is supplied.
+        const fallbackName = path
+            .basename(req.file.originalname, path.extname(req.file.originalname))
+            .trim();
+        const playlistName = (req.body.playlistName?.trim() || fallbackName);
+        if (!playlistName || playlistName.length > 200) {
+            return res.status(400).json({ error: "playlistName is required (1-200 chars)" });
+        }
+
+        const content = req.file.buffer.toString("utf-8");
+        const entries = parseCsvTracks(content);
+
+        if (entries.length === 0) {
+            return res.status(400).json({ error: "CSV file contains no track rows" });
+        }
+
+        const { jobId } = await spotifyImportService.startCsvPreviewJob(
+            req.user.id,
+            playlistName,
+            entries,
+        );
+
+        res.json({ jobId });
+    } catch (error: any) {
+        if (
+            error.message?.includes("Could not find") ||
+            error.message?.includes("no data rows") ||
+            error.message?.includes("is empty")
+        ) {
+            return res.status(400).json({ error: error.message });
+        }
+        safeError(res, "CSV import", error);
     }
 });
 

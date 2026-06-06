@@ -1821,6 +1821,32 @@ class ApiClient {
 
         return response.json();
     }
+
+    // CSV playlist import (Exportify / TuneMyMusic / Soundiiz exports).
+    // Returns a previewJobId the caller polls via /spotify/preview/:jobId, same as a URL import.
+    async importCsv(
+        file: File,
+        playlistName: string
+    ): Promise<{ jobId: string }> {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("playlistName", playlistName);
+
+        const response = await fetch(`${this.getBaseUrl()}/api/spotify/import/csv`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${this.getToken()}` },
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(
+                (error as Record<string, string>).error || "CSV import failed"
+            );
+        }
+
+        return response.json();
+    }
     // Corrupt tracks
     async getCorruptTracks() {
         return this.request<{
