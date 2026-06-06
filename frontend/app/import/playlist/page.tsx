@@ -20,6 +20,8 @@ import {
 import { api } from "@/lib/api";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/lib/toast-context";
+import { Modal } from "@/components/ui/Modal";
+import { Button } from "@/components/ui/Button";
 
 // Types for Spotify Import
 interface SpotifyTrack {
@@ -130,6 +132,9 @@ function ImportPlaylistPageContent() {
         "matched" | "download" | "notfound" | null
     >("matched");
     const [isDragging, setIsDragging] = useState(false);
+    const [csvModalOpen, setCsvModalOpen] = useState(false);
+    const [csvFile, setCsvFile] = useState<File | null>(null);
+    const [csvName, setCsvName] = useState("");
     const csvInputRef = useRef<HTMLInputElement>(null);
 
 
@@ -330,19 +335,44 @@ function ImportPlaylistPageContent() {
         }
     };
 
-    // Import from a CSV export (Exportify / TuneMyMusic / Soundiiz).
-    // Uploads the file, then reuses the same preview → import flow as a URL import.
-    const handleCsvFile = async (file: File) => {
+    // CSV import (Exportify / TuneMyMusic / Soundiiz). The modal stages a file
+    // and a playlist name; submit then uploads and reuses the same
+    // preview → import flow as a URL import.
+    const openCsvModal = () => {
+        setCsvFile(null);
+        setCsvName("");
+        setIsDragging(false);
+        setCsvModalOpen(true);
+    };
+
+    const stripCsvExt = (n: string) => n.replace(/\.(csv|tsv)$/i, "").trim();
+
+    const selectCsvFile = (file: File) => {
         const lower = file.name.toLowerCase();
         if (!lower.endsWith(".csv") && !lower.endsWith(".tsv")) {
-            toast.error("Please drop a .csv file exported from your playlist");
+            toast.error("Please choose a .csv or .tsv file exported from your playlist");
             return;
         }
+        setCsvFile(file);
+        // Pre-fill the name from the file the first time, but don't clobber an
+        // edit the user has already made.
+        setCsvName((prev) => prev.trim() || stripCsvExt(file.name));
+    };
 
+    const handleCsvDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file) selectCsvFile(file);
+    };
+
+    const submitCsvImport = async () => {
+        if (!csvFile) return;
         setIsLoading(true);
         try {
-            const defaultName = file.name.replace(/\.(csv|tsv)$/i, "").trim();
-            const { jobId } = await api.importCsv(file, defaultName);
+            const name = csvName.trim() || stripCsvExt(csvFile.name);
+            const { jobId } = await api.importCsv(csvFile, name);
+            setCsvModalOpen(false);
             setUrl("");
             setPreviewJobId(jobId);
             setStep("previewing");
@@ -354,13 +384,6 @@ function ImportPlaylistPageContent() {
             setIsLoading(false);
             if (csvInputRef.current) csvInputRef.current.value = "";
         }
-    };
-
-    const handleCsvDrop = (e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragging(false);
-        const file = e.dataTransfer.files?.[0];
-        if (file) handleCsvFile(file);
     };
 
     // Start import
@@ -580,59 +603,17 @@ function ImportPlaylistPageContent() {
                             <div className="flex-1 h-px bg-white/10" />
                         </div>
 
-                        {/* CSV import — explicit button opens the picker; the
-                            surrounding area also accepts a drag-and-drop. */}
-                        <div
-                            onDragOver={(e) => {
-                                e.preventDefault();
-                                setIsDragging(true);
-                            }}
-                            onDragLeave={(e) => {
-                                e.preventDefault();
-                                setIsDragging(false);
-                            }}
-                            onDrop={handleCsvDrop}
-                            className={`rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors ${
-                                isDragging
-                                    ? "border-[#ecb200] bg-[#ecb200]/10"
-                                    : "border-white/15"
-                            }`}
+                        {/* CSV import — opens a modal that explains the format,
+                            lets you name the playlist, and pick/drop the file. */}
+                        <button
+                            type="button"
+                            onClick={openCsvModal}
+                            disabled={isLoading}
+                            className="w-full py-3 rounded-full font-medium bg-white/10 text-white hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                         >
-                            {/* No `accept` filter: some OS file dialogs grey out
-                                .csv when a MIME type is listed. We validate the
-                                extension in handleCsvFile instead. */}
-                            <input
-                                ref={csvInputRef}
-                                type="file"
-                                className="hidden"
-                                onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) handleCsvFile(file);
-                                    e.target.value = "";
-                                }}
-                            />
-                            <button
-                                type="button"
-                                onClick={() => csvInputRef.current?.click()}
-                                disabled={isLoading}
-                                className="px-5 py-2.5 rounded-full font-medium bg-white/10 text-white hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2"
-                            >
-                                <Upload className="w-4 h-4" />
-                                Import CSV
-                            </button>
-                            <p className="text-xs text-gray-500 mt-3">
-                                or drag a file here · export from{" "}
-                                <a
-                                    href="https://exportify.net"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-[#ecb200] hover:underline"
-                                >
-                                    Exportify
-                                </a>
-                                , TuneMyMusic or Soundiiz · ISRC matched when present
-                            </p>
-                        </div>
+                            <Upload className="w-4 h-4" />
+                            Import from a CSV file
+                        </button>
                     </div>
                 )}
 
@@ -1258,6 +1239,124 @@ function ImportPlaylistPageContent() {
                         </div>
                     </div>
                 )}
+
+                {/* CSV import modal */}
+                <Modal
+                    isOpen={csvModalOpen}
+                    onClose={() => {
+                        if (!isLoading) setCsvModalOpen(false);
+                    }}
+                    title="Import playlist from CSV"
+                    footer={
+                        <>
+                            <Button
+                                variant="ghost"
+                                onClick={() => setCsvModalOpen(false)}
+                                disabled={isLoading}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                variant="primary"
+                                onClick={submitCsvImport}
+                                disabled={!csvFile || isLoading}
+                            >
+                                {isLoading ? "Importing…" : "Import"}
+                            </Button>
+                        </>
+                    }
+                >
+                    <div className="space-y-4">
+                        <p className="text-sm text-gray-400">
+                            Export your playlist to a CSV with{" "}
+                            <a
+                                href="https://exportify.net"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[#ecb200] hover:underline"
+                            >
+                                Exportify
+                            </a>
+                            , TuneMyMusic or Soundiiz, then add it here. Unlike a
+                            pasted Spotify URL, a CSV has no track limit.
+                        </p>
+                        <ul className="text-xs text-gray-500 space-y-1 list-disc list-inside">
+                            <li>
+                                <span className="text-gray-300">.csv</span> or{" "}
+                                <span className="text-gray-300">.tsv</span> with a
+                                Title and Artist column
+                            </li>
+                            <li>
+                                Album and ISRC columns are optional — ISRC gives the
+                                most accurate matches
+                            </li>
+                        </ul>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-1.5">
+                                Playlist name
+                            </label>
+                            <input
+                                type="text"
+                                value={csvName}
+                                onChange={(e) => setCsvName(e.target.value)}
+                                placeholder="My playlist"
+                                maxLength={200}
+                                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[#ecb200]/50 focus:border-[#ecb200] transition-colors"
+                            />
+                        </div>
+
+                        {/* Drop zone accepts drags; the explicit button is the
+                            only click target that opens the file picker. */}
+                        <div
+                            onDragOver={(e) => {
+                                e.preventDefault();
+                                setIsDragging(true);
+                            }}
+                            onDragLeave={(e) => {
+                                e.preventDefault();
+                                setIsDragging(false);
+                            }}
+                            onDrop={handleCsvDrop}
+                            className={`rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors ${
+                                isDragging
+                                    ? "border-[#ecb200] bg-[#ecb200]/10"
+                                    : "border-white/15"
+                            }`}
+                        >
+                            <input
+                                ref={csvInputRef}
+                                type="file"
+                                className="hidden"
+                                onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) selectCsvFile(file);
+                                    e.target.value = "";
+                                }}
+                            />
+                            {csvFile ? (
+                                <p className="text-sm text-gray-200 flex items-center justify-center gap-2 mb-3">
+                                    <Check className="w-4 h-4 text-green-400 shrink-0" />
+                                    <span className="truncate">{csvFile.name}</span>
+                                </p>
+                            ) : (
+                                <>
+                                    <Upload className="w-6 h-6 text-gray-400 mx-auto mb-2" />
+                                    <p className="text-sm text-gray-300 mb-3">
+                                        Drag a CSV here
+                                    </p>
+                                </>
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => csvInputRef.current?.click()}
+                                className="text-sm text-[#ecb200] hover:underline"
+                            >
+                                {csvFile ? "Choose a different file" : "Choose a file"}
+                            </button>
+                        </div>
+                    </div>
+                </Modal>
             </div>
         </div>
     );
