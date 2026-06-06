@@ -69,10 +69,13 @@ function SectionHeader({
     );
 }
 
-// How far ahead of the viewport (in px) to start loading covers. Larger =
-// more proactive (images ready before you scroll to them), at the cost of
-// loading more off-screen images up front.
-const COVER_PRELOAD_MARGIN = "1200px 0px";
+// How far ahead of the viewport to start loading covers, expressed in
+// viewport-heights so the look-ahead scales with screen size. IntersectionObserver
+// rootMargin percentages resolve against the root (viewport) height for the
+// top/bottom margins. Larger = more proactive, at the cost of loading more
+// off-screen covers up front.
+const COVER_PRELOAD_VIEWPORTS = 1.5;
+const COVER_PRELOAD_MARGIN = `${COVER_PRELOAD_VIEWPORTS * 100}% 0px`;
 
 // A single browse cover card. An IntersectionObserver starts loading the cover
 // well before it scrolls into view (proactive look-ahead, independent of the
