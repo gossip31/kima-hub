@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import {
@@ -16,6 +16,7 @@ import {
 import { api } from "@/lib/api";
 import { useToast } from "@/lib/toast-context";
 import { GradientSpinner } from "@/components/ui/GradientSpinner";
+import { LazyCover } from "@/components/ui/LazyCover";
 
 interface PlaylistPreview {
     id: string;
@@ -69,28 +70,8 @@ function SectionHeader({
     );
 }
 
-// Preload covers this many scroll-container heights ahead, so the look-ahead
-// scales with screen size. Larger = more proactive, at the cost of loading
-// more off-screen covers up front.
-const COVER_PRELOAD_VIEWPORTS = 1.5;
-
-// The page content scrolls inside a nested <main> (overflow-y-auto), not the
-// window — so the observer must use that element as its root, or rootMargin
-// can't see past its clipped fold. Walk up to the nearest scrolling ancestor.
-function getScrollParent(el: HTMLElement | null): HTMLElement | null {
-    let node = el?.parentElement ?? null;
-    while (node) {
-        const oy = getComputedStyle(node).overflowY;
-        if (oy === "auto" || oy === "scroll" || oy === "overlay") return node;
-        node = node.parentElement;
-    }
-    return null;
-}
-
-// A single browse cover card. An IntersectionObserver starts loading the cover
-// well before it scrolls into view (proactive look-ahead, independent of the
-// browser's connection-aware native lazy distance); the image then fades in.
-// Cards further than the margin render only a lightweight placeholder.
+// A single browse cover card. Covers preload ahead of the scroll and fade in
+// via the shared LazyCover component.
 function PlaylistCard({
     item,
     onClick,
@@ -98,57 +79,24 @@ function PlaylistCard({
     item: PlaylistPreview;
     onClick: () => void;
 }) {
-    const ref = useRef<HTMLButtonElement>(null);
-    const [near, setNear] = useState(false);
-    const [loaded, setLoaded] = useState(false);
-
-    useEffect(() => {
-        if (near) return;
-        const el = ref.current;
-        if (!el) return;
-        const root = getScrollParent(el);
-        const vh = root?.clientHeight || window.innerHeight;
-        const observer = new IntersectionObserver(
-            (entries) => {
-                if (entries.some((e) => e.isIntersecting)) {
-                    setNear(true);
-                    observer.disconnect();
-                }
-            },
-            {
-                root: root ?? null,
-                rootMargin: `${Math.round(COVER_PRELOAD_VIEWPORTS * vh)}px 0px`,
-            },
-        );
-        observer.observe(el);
-        return () => observer.disconnect();
-    }, [near]);
-
     return (
         <button
-            ref={ref}
             onClick={onClick}
             className="group cursor-pointer text-left w-full"
         >
             <div className="relative aspect-square mb-2.5 rounded-lg overflow-hidden bg-[var(--bg-primary)] border border-white/10 group-hover:border-[#a855f7]/40 group-hover:shadow-xl group-hover:shadow-[#a855f7]/10 transition-all duration-300">
-                {!item.imageUrl ? (
+                {item.imageUrl ? (
+                    <LazyCover
+                        src={item.imageUrl}
+                        alt={item.title}
+                        sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, (max-width: 1280px) 20vw, (max-width: 1536px) 16vw, 14vw"
+                        className="object-cover group-hover:scale-105"
+                    />
+                ) : (
                     <div className="w-full h-full flex items-center justify-center">
                         <Music2 className="w-12 h-12 text-white/10" />
                     </div>
-                ) : near ? (
-                    <Image
-                        src={item.imageUrl}
-                        alt={item.title}
-                        fill
-                        sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, (max-width: 1280px) 20vw, (max-width: 1536px) 16vw, 14vw"
-                        loading="eager"
-                        onLoad={() => setLoaded(true)}
-                        className={`object-cover group-hover:scale-105 transition-[transform,opacity] duration-300 ${
-                            loaded ? "opacity-100" : "opacity-0"
-                        }`}
-                        unoptimized
-                    />
-                ) : null}
+                )}
 
                 {/* Hover accent line */}
                 <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#a855f7] to-[#c026d3] transform scale-x-0 group-hover:scale-x-100 transition-transform duration-150 origin-center" />
