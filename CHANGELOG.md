@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - nightly
 
+## [1.8.1] - 2026-06-05
+
+### Added
+
+- **Optional slskd backend for Soulseek (#205, by gossip31)**: a `soulseekMode` setting routes Soulseek through an external [slskd](https://github.com/slskd/slskd) instance instead of the built-in client. slskd holds its own Soulseek account, so this mode needs no Kima-side username or password. The built-in client stays the default and is unchanged.
+
+### Fixed
+
+- **Audio analyzer crash-loop on corrupt files (#204, by gossip31)**: a handful of malformed files take an uncatchable native crash inside Essentia's decoder, which kills the worker before the failure can be counted, so those files looped forever and each crash left a large core dump behind. An ffmpeg integrity probe now screens files before Essentia decodes them, so a bad one fails cleanly and quarantines after the normal retry limit. As a backstop, the stale-processing recovery counts a worker crash as a retry, so any crash the probe can't predict still quarantines instead of looping.
+
+## [1.8.0] - 2026-06-04
+
+iOS playback reliability rebuilt from a stable baseline, Vibe search hardened against Redis pressure, the first phase of the Discover Weekly correctness rework, and a dependency pin that unbreaks the build.
+
+### Added
+
+- **iOS audio diagnostics**: the installed iOS PWA keeps a small rolling log of audio events on your own server to make playback bug reports actionable. Bounded and on-device; groundwork for a forthcoming general support-bundle export.
+
+### Fixed
+
+- **iOS earbud / lock-screen resume produced no audio and lost the session to another app**: three successive patches on the iOS AudioContext backgrounding bridge had compounded into a regression -- the worst awaited the context resume before `audio.play()` and returned early on a non-running context, so an earbud/lock-screen resume did nothing and, after a few attempts, iOS handed the audio session to the next app (a sleep-sounds app would start playing). The three patches were reverted to the proven bridge baseline (resume the context in parallel, always attempt `audio.play()`, gesture preserved), and the real gaps were fixed on top: the "playback" audio-session category is re-claimed on every explicit resume (not just the first), so iOS can't leave it with an app that grabbed it during an interruption, and an AudioContext `statechange` listener re-claims it when the OS ends an interruption. No background auto-resume was added, so the v1.7.12 earbud-unplug-through-speaker regression stays fixed. Installed iOS PWA only.
+- **Vibe text search crashed with "Stream isn't writeable" under load (#197)**: the text-embedding Redis bridge inherited the shared client's fail-fast options (`enableOfflineQueue:false`), so it threw whenever a connection was mid-reconnect, and a rejected promise was cached -- breaking Vibe search until restart. The first fix hardened only the subscriber; this hardens the whole path: the publisher uses its own buffered connection, dead connections are cleaned up instead of leaking or silently dropping responses, subscribe and publish are time-bounded so an unreachable Redis fails fast instead of hanging, analyzer failures are rejected cleanly instead of 500ing, and the analyzer reports internal errors immediately.
+- **Release build broke on a `transformers` update**: `transformers` was unpinned and resolved to a version that needs a newer `torch` than the pinned `torch==2.5.1` (it references `torch.float8_e8m0fnu`, added in torch 2.7), failing the analyzer image build. Pinned to `transformers==5.8.1`, the version proven against torch 2.5.1.
+- **Discover Weekly never showed (and silently auto-deleted) the generated playlist -- Phase 1 of the rework**: the Sunday cron tagged records with the *ending* week, so `GET /current` (which looked for the current week with exact equality) found nothing, and the next run's cleanup then deleted the invisible records. This phase fixes the core correctness path (no schema migration): generation now tags the upcoming week via a centralized week helper; the cron moves to Monday 05:00 with a dedup key aligned to the batch week; `/current` resolves from the latest completed batch (bounded, with a `stale` flag) so drifted records are visible; `buildFinalPlaylist` marks the batch failed on a transaction error instead of hanging in `scanning`; retry-unavailable routes through the shared completion flow so retried albums actually enter the playlist; cancelling a batch marks it `failed` (not a false "successful empty week"); album deletes are wrapped in transactions with an atomic claim guard so a concurrent "like" can't lose its album (and `/like` is symmetric); a same-`rgMbid` `LIBRARY` album is never deleted; and the BullMQ job hash is cleared before re-enqueue so a retry after a failure isn't silently dropped. `TZ=UTC` is pinned for deterministic week math.
+
+## [1.7.15] - 2026-06-01
+
+A frontend quality and UX overhaul (accessibility, theming, and UX refinements) plus two playback fixes.
+
+### Added
+
+- **Collection "Refine" panel**: filtering, sorting, and items-per-page are consolidated into one popover, with clearer "In your library" vs "Recommended" labels.
+- **Mobile vibe track operations**: match-vibe, find-similar, and Song Path are now reachable on touch via a panel sheet; the vibe map gained a first-run hint, and "Drift" was renamed "Song Path" with outcome-focused tooltips.
+- **Discover Weekly clarity**: a clearer generate CTA, disk-usage disclosure before generation, and two-phase progress.
+- **Safer destructive settings**: cache/enrichment resets now require a confirmation dialog; maintenance actions are grouped and section labels corrected.
+- **Onboarding**: per-integration test/result state and clearer admin-account vs integration copy.
+- **Playlist virtualization**: large playlists render a windowed subset of rows (load-tested ~33,700 -> ~1,260 DOM nodes for a 1,000-track playlist) for smooth scrolling.
+- **Mini-player gesture hint**: a one-time hint explains the swipe gestures (behavior unchanged).
+
+### Fixed
+
+- **iOS playback stopping after almost every song when backgrounded**: the silent-playback watchdog (added in v1.7.13) was armed on every automatic track transition and judged "silent" purely from whether a `timeupdate` event arrived within 2.5s. iOS throttles that event when the installed PWA is backgrounded, so after most songs the watchdog wrongly paused healthy playback and surfaced a "Tap play to resume" error. It now judges liveness by `audio.currentTime` advancement, never tears down while the document is hidden, and only the genuine deep-suspension case (suspended/interrupted AudioContext) still prompts -- restored via an explicit foreground check. Installed iOS PWA only.
+- **Desktop Discover settings / lyrics not opening in the rebuilt sidebar**: the desktop `UnifiedPanel` never read the externally-registered settings content, so the Discover settings gear (and lyrics) opened the panel to the activity feed instead of the settings. The panel now renders the registered content and returns to the feed on collapse. Pre-existing since the sidebar rewrite.
+- **Keyboard focus squaring off rounded controls**: the global `:focus-visible` rule set `border-radius` on the focused element (not the outline), distorting circular and rounded buttons/modals on keyboard focus; removed (browsers already round the outline via `outline-offset`).
+- **Library search silently capped at 10 results**; now renders all matches.
+- **Real-bug batch**: an invisible refresh button (invalid color class), a dead `?tab=` link parameter, a non-functional queue drag handle, and several silently-swallowed errors (radio, podcasts) now surface.
+- **Playlist scroll correctness**: the virtualizer offset is measured against the real scroll container and re-measured on reflow.
+- `logout` return type corrected to `Promise<void>`; `aria-expanded` now stays in sync across every panel close path; removed a nested-interactive ARIA role on the mini-player.
+
+### Changed
+
+- **Accessibility (WCAG AA)**: muted text raised to 4.81:1 contrast, a global brand focus ring restored on keyboard navigation app-wide, ARIA labels/landmarks across remaining routes, and 44px minimum touch targets.
+- **Brand color consolidated** to the official amber (`#fca200`); the legacy green accent was removed.
+- **Internal theming**: hard-coded hex colors migrated to design tokens, and redundant tokens that merely aliased Tailwind values were dropped in favor of Tailwind utilities (no visual change).
+
+## [1.7.14] - 2026-05-27
+
+### Fixed
+
+- **Podcast refresh silently stuck (#81)**: BullMQ retains completed-job hashes, so re-adding a refresh job with the same id was silently deduplicated and dropped. Completed jobs are now cleaned before re-queue, so podcast refresh works repeatedly.
+
+## [1.7.13] - 2026-05-14
+
+iOS audio reliability overhaul plus audiobook, Soulseek, and podcast fixes.
+
+### Fixed
+
+- **iOS audio survival and resume**: the audio element is bridged through an AudioContext to survive backgrounding; the next track's source is swapped synchronously on track-end to preserve the iOS autoplay grant; foreground resume uses a `wasPlaying` flag; AudioContext resume is awaited with silent-playback detection; and audio route-change pauses are now observable. Restored the standalone PWA on iOS so Safari chrome stops covering the UI.
+- **Audiobook chapter ordering (#184)**: chapters/tracks are resolved by logical chapter number and sorted defensively by offset; sync failures now show the backend's actual error message.
+- **Soulseek download errors (#192)**: errors propagate to the awaiting promise instead of crashing the backend; service-layer error listeners carry file context.
+- **Podcasts (#168)**: an error UI is rendered instead of an infinite spinner, and state resets on navigation so errors don't stick across podcasts.
+
+### Added
+
+- **iOS audio forensics** (opt-in via `?ios_debug=1`): an audio-event ring buffer, MediaSession and lifecycle instrumentation, and a `/debug/ios-log` viewer with a backend archival endpoint.
+
+### Changed
+
+- Pinned Next.js to `^16.2.2` to match the container's resolved version.
+
 ## [1.7.12] - 2026-04-16
 
 ### Added
