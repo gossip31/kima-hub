@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Book, CheckCircle } from "lucide-react";
-import { CachedImage } from "./CachedImage";
+import { LazyCover } from "@/components/ui/LazyCover";
 
 interface AudiobookCardProps {
     id: string;
@@ -41,16 +41,11 @@ export function AudiobookCard({
                 <div className="relative flex-shrink-0">
                     <div className="aspect-[2/3] rounded-lg overflow-hidden bg-[var(--bg-primary)] border border-white/10 group-hover:border-[#f59e0b]/40 group-hover:shadow-xl group-hover:shadow-[#f59e0b]/10 transition-all duration-300 relative">
                         {resolvedCoverUrl ? (
-                            <CachedImage
+                            <LazyCover
                                 src={resolvedCoverUrl}
                                 alt={title}
-                                fill
                                 sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, (max-width: 1280px) 20vw, (max-width: 1536px) 16.6vw, (max-width: 2000px) 12.5vw, 10vw"
                                 className="object-cover"
-                                loading="lazy"
-                                onError={(e) => {
-                                    e.currentTarget.style.display = "none";
-                                }}
                             />
                         ) : (
                             <div className="w-full h-full flex items-center justify-center">

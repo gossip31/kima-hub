@@ -6,7 +6,7 @@ import { cn } from "@/utils/cn";
 import { GradientSpinner } from "@/components/ui/GradientSpinner";
 import { api } from "@/lib/api";
 import Link from "next/link";
-import Image from "next/image";
+import { LazyCover } from "@/components/ui/LazyCover";
 
 interface ReleaseItem {
     id: number | string;
@@ -211,13 +211,11 @@ function ReleaseCard({
             {/* Cover Art */}
             <div className="aspect-square rounded-lg overflow-hidden bg-white/5 mb-3 relative">
                 {release.coverUrl ? (
-                    <Image
+                    <LazyCover
                         src={release.coverUrl}
                         alt={release.title}
-                        fill
                         sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, (max-width: 1280px) 20vw, 16vw"
                         className="object-cover group-hover:scale-105 transition-transform duration-150"
-                        unoptimized
                     />
                 ) : (
                     <div className="w-full h-full flex items-center justify-center">

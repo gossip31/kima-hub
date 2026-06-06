@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
+import { LazyCover } from "@/components/ui/LazyCover";
 import { api } from "@/lib/api";
 import { useAudioState, useAudioPlayback, useAudioControls } from "@/lib/audio-context";
 import { GradientSpinner } from "@/components/ui/GradientSpinner";
@@ -354,13 +355,11 @@ export default function MixPage() {
                                         <div className="flex items-center gap-3 min-w-0">
                                             <div className="relative w-10 h-10 bg-[#282828] rounded shrink-0 overflow-hidden">
                                                 {track.album?.coverUrl ? (
-                                                    <Image
+                                                    <LazyCover
                                                         src={api.getCoverArtUrl(track.album.coverUrl, 100)}
                                                         alt={track.title}
-                                                        fill
                                                         sizes="40px"
                                                         className="object-cover"
-                                                        unoptimized
                                                     />
                                                 ) : (
                                                     <div className="w-full h-full flex items-center justify-center">

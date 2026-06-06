@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
+import { LazyCover } from "@/components/ui/LazyCover";
 import Link from "next/link";
 import { usePlaylistsQuery } from "@/hooks/useQueries";
 import { useQueryClient } from "@tanstack/react-query";
@@ -103,13 +103,11 @@ function PlaylistMosaic({
 
     if (coverUrls.length === 1) {
         return (
-            <Image
+            <LazyCover
                 src={coverUrls[0]}
                 alt=""
-                fill
                 className={cn("object-cover", greyed && "opacity-50 grayscale")}
                 sizes="200px"
-                unoptimized
             />
         );
     }
@@ -123,13 +121,11 @@ function PlaylistMosaic({
         >
             {coverUrls.slice(0, 4).map((url, index) => (
                 <div key={index} className="relative">
-                    <Image
+                    <LazyCover
                         src={url}
                         alt=""
-                        fill
                         className="object-cover"
                         sizes="100px"
-                        unoptimized
                     />
                 </div>
             ))}

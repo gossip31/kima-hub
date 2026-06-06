@@ -6,7 +6,7 @@ import { Play, Pause, Check, Download } from "lucide-react";
 import { Card, CardProps } from "./Card";
 import { cn } from "@/utils/cn";
 import type { ColorPalette } from "@/hooks/useImageColor";
-import { CachedImage } from "./CachedImage";
+import { LazyCover } from "@/components/ui/LazyCover";
 
 // Kima brand amber for all on-page play buttons
 const KIMA_YELLOW = "var(--color-brand)";
@@ -70,12 +70,10 @@ const PlayableCard = memo(function PlayableCard({
                     style={{ contain: "content" }}
                 >
                     {memoizedCoverArt ?
-                        <CachedImage
+                        <LazyCover
                             src={memoizedCoverArt}
                             alt={title}
-                            fill
                             className="object-cover group-hover:scale-105 transition-transform"
-                            loading="lazy"
                             sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, (max-width: 1280px) 20vw, 16vw"
                         />
                     :   placeholderIcon || (
