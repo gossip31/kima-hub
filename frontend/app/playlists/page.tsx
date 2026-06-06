@@ -22,8 +22,11 @@ import {
     Loader2,
     X,
     Check,
+    Upload,
 } from "lucide-react";
 import { GradientSpinner } from "@/components/ui/GradientSpinner";
+import { Modal } from "@/components/ui/Modal";
+import { Button } from "@/components/ui/Button";
 import { api } from "@/lib/api";
 import { cn } from "@/utils/cn";
 
@@ -405,124 +408,189 @@ function ImportUrlPanel({ onClose }: { onClose: () => void }) {
     );
 }
 
-function ImportM3UPanel({ onClose }: { onClose: () => void }) {
+function ImportFileModal({ onClose }: { onClose: () => void }) {
+    const router = useRouter();
     const queryClient = useQueryClient();
     const [file, setFile] = useState<File | null>(null);
     const [playlistName, setPlaylistName] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [result, setResult] = useState<{ playlistId: string; matched: number; total: number } | null>(null);
+    const [isDragging, setIsDragging] = useState(false);
+    const [m3uResult, setM3uResult] = useState<{ playlistId: string; matched: number; total: number } | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const nameInputRef = useRef<HTMLInputElement>(null);
 
-    useEffect(() => {
-        fileInputRef.current?.click();
-    }, []);
+    const stripExt = (n: string) => n.replace(/\.(csv|tsv|m3u8?)$/i, "").trim();
 
-    useEffect(() => {
-        if (file) {
-            nameInputRef.current?.focus();
-        }
-    }, [file]);
-
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const selected = e.target.files?.[0];
-        if (!selected) {
-            onClose();
+    const selectFile = (f: File) => {
+        if (!/\.(csv|tsv|m3u8?)$/i.test(f.name)) {
+            setError("Please choose a .csv, .tsv, or .m3u file");
             return;
         }
-        setFile(selected);
-        const nameWithoutExt = selected.name.replace(/\.(m3u8?|M3U8?)$/, "");
-        setPlaylistName(nameWithoutExt);
+        setError(null);
+        setFile(f);
+        setPlaylistName((prev) => prev.trim() || stripExt(f.name));
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!file || !playlistName.trim()) return;
+    const handleSubmit = async () => {
+        if (!file) return;
+        const name = playlistName.trim() || stripExt(file.name);
+        const isCsv = /\.(csv|tsv)$/i.test(file.name);
 
         setIsSubmitting(true);
         setError(null);
         try {
-            const res = await api.importM3U(file, playlistName.trim());
-            setResult({ playlistId: res.playlistId, matched: res.matched, total: res.total });
+            if (isCsv) {
+                // CSV runs through the preview pipeline (library match + optional
+                // downloads, no track-count cap). Hand the job to the importer page.
+                const { jobId } = await api.importCsv(file, name);
+                router.push(`/import/playlist?previewJob=${jobId}`);
+                return;
+            }
+            // M3U matches against the local library and creates the playlist now.
+            const res = await api.importM3U(file, name);
+            setM3uResult({ playlistId: res.playlistId, matched: res.matched, total: res.total });
             queryClient.invalidateQueries({ queryKey: queryKeys.playlists() });
         } catch (err) {
-            setError(err instanceof Error ? err.message : "M3U import failed");
+            setError(err instanceof Error ? err.message : "Import failed");
             setIsSubmitting(false);
         }
     };
 
-    if (result) {
-        return (
-            <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2 text-sm text-white">
+    return (
+        <Modal
+            isOpen
+            onClose={() => {
+                if (!isSubmitting) onClose();
+            }}
+            title="Import a playlist file"
+            footer={
+                m3uResult ? (
+                    <Button variant="primary" onClick={onClose}>
+                        Done
+                    </Button>
+                ) : (
+                    <>
+                        <Button variant="ghost" onClick={onClose} disabled={isSubmitting}>
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="primary"
+                            onClick={handleSubmit}
+                            disabled={!file || isSubmitting}
+                        >
+                            {isSubmitting ? "Importing…" : "Import"}
+                        </Button>
+                    </>
+                )
+            }
+        >
+            {m3uResult ? (
+                <div className="flex items-center gap-3 text-sm text-white">
                     <Check className="w-4 h-4 text-green-400 shrink-0" />
                     <span>
-                        Created &ldquo;{playlistName}&rdquo; with {result.matched} of {result.total} tracks matched.
+                        Created &ldquo;{playlistName}&rdquo; — {m3uResult.matched} of {m3uResult.total} tracks matched.
                     </span>
-                </div>
-                <Link
-                    href={`/playlist/${result.playlistId}`}
-                    className="px-4 py-2 rounded-lg text-xs font-black bg-brand text-black hover:bg-[#f97316] transition-colors uppercase tracking-wider"
-                >
-                    View Playlist
-                </Link>
-                <button
-                    type="button"
-                    onClick={onClose}
-                    className="px-3 py-2 rounded-lg text-xs font-mono text-white/40 hover:text-white/70 transition-colors"
-                >
-                    <X className="w-4 h-4" />
-                </button>
-            </div>
-        );
-    }
-
-    return (
-        <>
-            <input
-                ref={fileInputRef}
-                type="file"
-                accept=".m3u,.m3u8"
-                onChange={handleFileChange}
-                className="hidden"
-            />
-            {file && (
-                <form onSubmit={handleSubmit} className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-mono text-white/60 shrink-0">
-                        <FileMusic className="w-3.5 h-3.5 text-brand" />
-                        {file.name}
-                    </div>
-                    <input
-                        ref={nameInputRef}
-                        type="text"
-                        value={playlistName}
-                        onChange={(e) => setPlaylistName(e.target.value)}
-                        placeholder="Playlist name..."
-                        className="flex-1 min-w-[180px] px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/30"
-                        disabled={isSubmitting}
-                    />
-                    <button
-                        type="submit"
-                        disabled={!playlistName.trim() || isSubmitting}
-                        className="px-4 py-2 rounded-lg text-xs font-black bg-brand text-black hover:bg-[#f97316] transition-colors uppercase tracking-wider disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
-                    >
-                        {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                        Create Playlist
-                    </button>
-                    <button
-                        type="button"
+                    <Link
+                        href={`/playlist/${m3uResult.playlistId}`}
                         onClick={onClose}
-                        className="px-3 py-2 rounded-lg text-xs font-mono text-white/40 hover:text-white/70 transition-colors"
+                        className="ml-auto px-3 py-1.5 rounded-lg text-xs font-black bg-brand text-black hover:bg-[#f97316] transition-colors uppercase tracking-wider"
                     >
-                        <X className="w-4 h-4" />
-                    </button>
+                        View
+                    </Link>
+                </div>
+            ) : (
+                <div className="space-y-4">
+                    <div className="text-sm text-gray-400 space-y-1.5">
+                        <p>
+                            <span className="text-gray-200 font-medium">CSV</span> — a playlist exported from{" "}
+                            <a
+                                href="https://exportify.net"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-brand hover:underline"
+                            >
+                                Exportify
+                            </a>
+                            , TuneMyMusic or Soundiiz. Matches your library and can download the rest; no track limit.
+                        </p>
+                        <p>
+                            <span className="text-gray-200 font-medium">M3U</span> — matches against files already in your library.
+                        </p>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1.5">
+                            Playlist name
+                        </label>
+                        <input
+                            type="text"
+                            value={playlistName}
+                            onChange={(e) => setPlaylistName(e.target.value)}
+                            placeholder="My playlist"
+                            maxLength={200}
+                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand transition-colors"
+                        />
+                    </div>
+
+                    {/* Drop zone accepts drags; the explicit button is the only
+                        click target that opens the file picker. */}
+                    <div
+                        onDragOver={(e) => {
+                            e.preventDefault();
+                            setIsDragging(true);
+                        }}
+                        onDragLeave={(e) => {
+                            e.preventDefault();
+                            setIsDragging(false);
+                        }}
+                        onDrop={(e) => {
+                            e.preventDefault();
+                            setIsDragging(false);
+                            const f = e.dataTransfer.files?.[0];
+                            if (f) selectFile(f);
+                        }}
+                        className={`rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors ${
+                            isDragging ? "border-brand bg-brand/10" : "border-white/15"
+                        }`}
+                    >
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            className="hidden"
+                            onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) selectFile(f);
+                                e.target.value = "";
+                            }}
+                        />
+                        {file ? (
+                            <p className="text-sm text-gray-200 flex items-center justify-center gap-2 mb-3">
+                                <Check className="w-4 h-4 text-green-400 shrink-0" />
+                                <span className="truncate">{file.name}</span>
+                            </p>
+                        ) : (
+                            <>
+                                <Upload className="w-6 h-6 text-gray-400 mx-auto mb-2" />
+                                <p className="text-sm text-gray-300 mb-3">
+                                    Drag a .csv or .m3u file here
+                                </p>
+                            </>
+                        )}
+                        <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="text-sm text-brand hover:underline"
+                        >
+                            {file ? "Choose a different file" : "Choose a file"}
+                        </button>
+                    </div>
+
                     {error && (
-                        <p className="w-full text-xs font-mono text-red-400 mt-1">{error}</p>
+                        <p className="text-xs font-mono text-red-400">{error}</p>
                     )}
-                </form>
+                </div>
             )}
-        </>
+        </Modal>
     );
 }
 
@@ -651,25 +719,21 @@ function EmptyState({
                     )}
                 </div>
 
-                {/* Import M3U */}
+                {/* Import file (CSV / M3U) */}
                 <div className="space-y-3">
                     <button
-                        onClick={() => setActiveAction(activeAction === "importFile" ? null : "importFile")}
+                        onClick={() => setActiveAction("importFile")}
                         className="flex items-center gap-3 text-left group"
                     >
                         <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 group-hover:bg-white/10 transition-colors">
                             <FileMusic className="w-5 h-5 text-white/40" />
                         </div>
                         <div>
-                            <h3 className="text-sm font-black tracking-tight text-white">Import from M3U file</h3>
-                            <p className="text-xs font-mono text-white/30 uppercase tracking-wider">Upload .m3u or .m3u8</p>
+                            <h3 className="text-sm font-black tracking-tight text-white">Import from a file</h3>
+                            <p className="text-xs font-mono text-white/30 uppercase tracking-wider">CSV export or .m3u</p>
                         </div>
                     </button>
-                    {activeAction === "importFile" && (
-                        <div className="pl-[52px]">
-                            <ImportM3UPanel onClose={() => setActiveAction(null)} />
-                        </div>
-                    )}
+                    {/* The modal itself is rendered once at the page level. */}
                 </div>
 
                 {/* Browse */}
@@ -870,17 +934,15 @@ export default function PlaylistsPage() {
                         </Link>
                     </div>
 
-                    {/* Inline action panel */}
-                    {activeAction && (
+                    {/* Inline action panel (importFile uses a modal, rendered
+                        once at the page level below). */}
+                    {activeAction && activeAction !== "importFile" && (
                         <div className="mt-4 p-4 rounded-lg bg-white/[0.02] border border-white/10">
                             {activeAction === "create" && (
                                 <CreatePanel onClose={() => setActiveAction(null)} />
                             )}
                             {activeAction === "importUrl" && (
                                 <ImportUrlPanel onClose={() => setActiveAction(null)} />
-                            )}
-                            {activeAction === "importFile" && (
-                                <ImportM3UPanel onClose={() => setActiveAction(null)} />
                             )}
                         </div>
                     )}
@@ -941,6 +1003,12 @@ export default function PlaylistsPage() {
                     )}
                 </div>
             </div>
+
+            {/* File-import modal (CSV / M3U) — single instance for both the
+                header and empty-state "Import from a file" buttons. */}
+            {activeAction === "importFile" && (
+                <ImportFileModal onClose={() => setActiveAction(null)} />
+            )}
         </div>
     );
 }

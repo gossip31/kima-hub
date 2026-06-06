@@ -138,6 +138,17 @@ function ImportPlaylistPageContent() {
     const csvInputRef = useRef<HTMLInputElement>(null);
 
 
+    // Resume an already-started preview (e.g. a CSV uploaded from the
+    // /playlists page hands off its preview job id here).
+    useEffect(() => {
+        const job = searchParams.get("previewJob");
+        if (job && !hasAutoFetched.current) {
+            hasAutoFetched.current = true;
+            setPreviewJobId(job);
+            setStep("previewing");
+        }
+    }, [searchParams]);
+
     // Pre-fill URL from query params and reconnect to active import if one exists
     useEffect(() => {
         const urlParam = searchParams.get("url");
@@ -517,9 +528,6 @@ function ImportPlaylistPageContent() {
                         </h1>
                         <p className="text-sm text-gray-400">
                             Import from Spotify, Deezer, or a CSV export
-                        </p>
-                        <p className="text-[10px] text-[#ecb200] font-mono mt-0.5">
-                            build: CSVMODAL-BUILD-7Q2 · click &quot;Import from a CSV file&quot; for the modal
                         </p>
                     </div>
                 </div>
