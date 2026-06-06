@@ -518,6 +518,9 @@ function ImportPlaylistPageContent() {
                         <p className="text-sm text-gray-400">
                             Import from Spotify, Deezer, or a CSV export
                         </p>
+                        <p className="text-[10px] text-[#ecb200] font-mono mt-0.5">
+                            build: CSVMODAL-BUILD-7Q2 · click &quot;Import from a CSV file&quot; for the modal
+                        </p>
                     </div>
                 </div>
 
