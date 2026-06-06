@@ -103,12 +103,19 @@ function PlaylistMosaic({
 
     if (coverUrls.length === 1) {
         return (
-            <LazyCover
-                src={coverUrls[0]}
-                alt=""
-                className={cn("object-cover", greyed && "opacity-50 grayscale")}
-                sizes="200px"
-            />
+            <div
+                className={cn(
+                    "absolute inset-0",
+                    greyed && "opacity-50 grayscale",
+                )}
+            >
+                <LazyCover
+                    src={coverUrls[0]}
+                    alt=""
+                    className="object-cover"
+                    sizes="200px"
+                />
+            </div>
         );
     }
 

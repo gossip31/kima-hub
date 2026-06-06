@@ -34,10 +34,11 @@ export function LazyCover({
     const ref = useRef<HTMLDivElement>(null);
     const near = useNearViewport(ref, preloadViewports);
     const [loaded, setLoaded] = useState(false);
+    const [errored, setErrored] = useState(false);
 
     return (
         <div ref={ref} className="absolute inset-0">
-            {near && (
+            {near && !errored && (
                 <CachedImage
                     src={src}
                     alt={alt}
@@ -45,6 +46,7 @@ export function LazyCover({
                     sizes={sizes}
                     loading="eager"
                     onLoad={() => setLoaded(true)}
+                    onError={() => setErrored(true)}
                     className={`${className ?? ""} transition-opacity duration-300 ${
                         loaded ? "opacity-100" : "opacity-0"
                     }`}
