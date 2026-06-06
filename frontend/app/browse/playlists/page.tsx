@@ -322,20 +322,6 @@ export default function BrowsePlaylistsPage() {
         </button>
     );
 
-    if (isLoading && !selectedGenre && !hasSearched) {
-        return (
-            <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] to-black px-4 md:px-8 py-8">
-                <div className="max-w-[1800px] mx-auto">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-6">
-                        {Array.from({ length: 21 }).map((_, i) => (
-                            <SkeletonCard key={i} />
-                        ))}
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
     let sectionIndex = 0;
 
     return (
@@ -471,8 +457,24 @@ export default function BrowsePlaylistsPage() {
                         </div>
                     )}
 
-                    {/* Loading State */}
-                    {(isLoading || isSearching) && !loadError && (
+                    {/* Initial load — skeleton grid in place, so the header,
+                        tabs and section title stay put and only the grid swaps. */}
+                    {isLoading &&
+                        !selectedGenre &&
+                        !hasSearched &&
+                        !loadError && (
+                            <div>
+                                <SectionHeader title="Featured Playlists" />
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-6">
+                                    {Array.from({ length: 21 }).map((_, i) => (
+                                        <SkeletonCard key={i} />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                    {/* Searching — spinner */}
+                    {isSearching && !loadError && (
                         <div className="flex items-center justify-center py-24">
                             <GradientSpinner size="md" />
                         </div>
