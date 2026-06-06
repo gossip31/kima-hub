@@ -580,7 +580,8 @@ function ImportPlaylistPageContent() {
                             <div className="flex-1 h-px bg-white/10" />
                         </div>
 
-                        {/* CSV drag-and-drop */}
+                        {/* CSV import — explicit button opens the picker; the
+                            surrounding area also accepts a drag-and-drop. */}
                         <div
                             onDragOver={(e) => {
                                 e.preventDefault();
@@ -591,34 +592,40 @@ function ImportPlaylistPageContent() {
                                 setIsDragging(false);
                             }}
                             onDrop={handleCsvDrop}
-                            onClick={() => csvInputRef.current?.click()}
-                            className={`rounded-lg border-2 border-dashed px-4 py-8 text-center cursor-pointer transition-colors ${
+                            className={`rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors ${
                                 isDragging
                                     ? "border-[#ecb200] bg-[#ecb200]/10"
-                                    : "border-white/15 hover:border-white/30 hover:bg-white/5"
+                                    : "border-white/15"
                             }`}
                         >
+                            {/* No `accept` filter: some OS file dialogs grey out
+                                .csv when a MIME type is listed. We validate the
+                                extension in handleCsvFile instead. */}
                             <input
                                 ref={csvInputRef}
                                 type="file"
-                                accept=".csv,.tsv,text/csv"
                                 className="hidden"
                                 onChange={(e) => {
                                     const file = e.target.files?.[0];
                                     if (file) handleCsvFile(file);
+                                    e.target.value = "";
                                 }}
                             />
-                            <Upload className="w-7 h-7 text-gray-400 mx-auto mb-2" />
-                            <p className="text-sm text-gray-300 font-medium">
-                                Drop a playlist CSV here, or click to browse
-                            </p>
-                            <p className="text-xs text-gray-500 mt-1">
-                                Export from{" "}
+                            <button
+                                type="button"
+                                onClick={() => csvInputRef.current?.click()}
+                                disabled={isLoading}
+                                className="px-5 py-2.5 rounded-full font-medium bg-white/10 text-white hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2"
+                            >
+                                <Upload className="w-4 h-4" />
+                                Import CSV
+                            </button>
+                            <p className="text-xs text-gray-500 mt-3">
+                                or drag a file here · export from{" "}
                                 <a
                                     href="https://exportify.net"
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    onClick={(e) => e.stopPropagation()}
                                     className="text-[#ecb200] hover:underline"
                                 >
                                     Exportify
