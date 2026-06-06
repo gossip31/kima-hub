@@ -351,9 +351,11 @@ router.get("/all", async (_req, res) => {
     try {
         logger.debug("[Browse] Fetching browse content (playlists + genres)...");
 
-        // Only fetch playlists and genres - radios are now internal library-based
+        // Fetch just the chart's 99 here — a single fast Deezer call — so the
+        // browse page paints immediately. The page then lazily pulls the
+        // genre-sourced remainder from /playlists/featured?limit=200.
         const [playlists, genres] = await Promise.all([
-            deezerService.getFeaturedPlaylists(200),
+            deezerService.getFeaturedPlaylists(99),
             deezerService.getGenres(),
         ]);
 

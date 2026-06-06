@@ -69,6 +69,65 @@ function SectionHeader({
     );
 }
 
+// A single browse cover card. The cover fades in once it loads, and
+// content-visibility lets the browser skip rendering/painting cards that are
+// off-screen, so a large grid stays cheap to scroll.
+function PlaylistCard({
+    item,
+    onClick,
+}: {
+    item: PlaylistPreview;
+    onClick: () => void;
+}) {
+    const [loaded, setLoaded] = useState(false);
+    return (
+        <button
+            onClick={onClick}
+            className="group cursor-pointer text-left w-full [content-visibility:auto] [contain-intrinsic-size:auto_240px]"
+        >
+            <div className="relative aspect-square mb-2.5 rounded-lg overflow-hidden bg-[var(--bg-primary)] border border-white/10 group-hover:border-[#a855f7]/40 group-hover:shadow-xl group-hover:shadow-[#a855f7]/10 transition-all duration-300">
+                {item.imageUrl ? (
+                    <Image
+                        src={item.imageUrl}
+                        alt={item.title}
+                        fill
+                        sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, (max-width: 1280px) 20vw, (max-width: 1536px) 16vw, 14vw"
+                        onLoad={() => setLoaded(true)}
+                        className={`object-cover group-hover:scale-105 transition-[transform,opacity] duration-300 ${
+                            loaded ? "opacity-100" : "opacity-0"
+                        }`}
+                        unoptimized
+                    />
+                ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                        <Music2 className="w-12 h-12 text-white/10" />
+                    </div>
+                )}
+
+                {/* Hover accent line */}
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#a855f7] to-[#c026d3] transform scale-x-0 group-hover:scale-x-100 transition-transform duration-150 origin-center" />
+            </div>
+            <h3 className="text-sm font-black text-white truncate tracking-tight">
+                {item.title}
+            </h3>
+            <p className="text-[11px] font-mono text-white/40 truncate uppercase tracking-wider mt-0.5">
+                {item.trackCount} songs -- {item.creator}
+            </p>
+        </button>
+    );
+}
+
+// Placeholder tile shown while playlists load.
+function SkeletonCard() {
+    return (
+        <div className="w-full">
+            <div className="aspect-square mb-2.5 rounded-lg bg-white/5 animate-pulse" />
+            <div className="h-3 w-3/4 rounded bg-white/5 animate-pulse" />
+            <div className="h-2 w-1/2 rounded bg-white/5 animate-pulse mt-1.5" />
+        </div>
+    );
+}
+
 export default function BrowsePlaylistsPage() {
     const router = useRouter();
     const { toast } = useToast();
@@ -84,6 +143,7 @@ export default function BrowsePlaylistsPage() {
     const [loadError, setLoadError] = useState<string | null>(null);
 
     const [playlists, setPlaylists] = useState<PlaylistPreview[]>([]);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [genres, setGenres] = useState<Genre[]>([]);
     const [selectedGenre, setSelectedGenre] = useState<Genre | null>(null);
     const [genrePlaylists, setGenrePlaylists] = useState<PlaylistPreview[]>([]);
@@ -92,18 +152,40 @@ export default function BrowsePlaylistsPage() {
         setIsLoading(true);
         setLoadError(null);
         try {
-            const response = await api.get<{
+            // Phase 1: the chart's 99 + genres — one fast Deezer call, paints
+            // the grid immediately.
+            const first = await api.get<{
                 playlists: PlaylistPreview[];
                 genres: Genre[];
             }>("/browse/all");
-            setPlaylists(response.playlists);
-            setGenres(response.genres);
+            setPlaylists(first.playlists);
+            setGenres(first.genres);
+            setIsLoading(false);
+
+            // Phase 2: lazily fetch the full 200 and append the remainder.
+            // The genre-search path is slower, so it streams in behind the 99.
+            setIsLoadingMore(true);
+            try {
+                const full = await api.get<{ playlists: PlaylistPreview[] }>(
+                    "/browse/playlists/featured?limit=200",
+                );
+                setPlaylists((prev) => {
+                    const seen = new Set(prev.map((p) => `${p.source}-${p.id}`));
+                    const extra = full.playlists.filter(
+                        (p) => !seen.has(`${p.source}-${p.id}`),
+                    );
+                    return extra.length ? [...prev, ...extra] : prev;
+                });
+            } catch {
+                // Non-fatal — the first 99 are already on screen.
+            } finally {
+                setIsLoadingMore(false);
+            }
         } catch (error) {
             console.error("Failed to fetch browse content:", error);
             setLoadError(
                 "Couldn't load playlists. Check your connection and try again.",
             );
-        } finally {
             setIsLoading(false);
         }
     }, []);
@@ -204,36 +286,11 @@ export default function BrowsePlaylistsPage() {
         index: number,
         context?: string,
     ) => (
-        <button
+        <PlaylistCard
             key={`${item.source}-${item.type}-${item.id}-${context || "main"}-${index}`}
+            item={item}
             onClick={() => handleItemClick(item)}
-            className="group cursor-pointer text-left w-full"
-        >
-            <div className="relative aspect-square mb-2.5 rounded-lg overflow-hidden bg-[var(--bg-primary)] border border-white/10 group-hover:border-[#a855f7]/40 group-hover:shadow-xl group-hover:shadow-[#a855f7]/10 transition-all duration-300">
-                {item.imageUrl ?
-                    <Image
-                        src={item.imageUrl}
-                        alt={item.title}
-                        fill
-                        sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, (max-width: 1280px) 20vw, (max-width: 1536px) 16vw, 14vw"
-                        className="object-cover group-hover:scale-105 transition-transform duration-150"
-                        unoptimized
-                    />
-                :   <div className="w-full h-full flex items-center justify-center">
-                        <Music2 className="w-12 h-12 text-white/10" />
-                    </div>
-                }
-
-                {/* Hover accent line */}
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#a855f7] to-[#c026d3] transform scale-x-0 group-hover:scale-x-100 transition-transform duration-150 origin-center" />
-            </div>
-            <h3 className="text-sm font-black text-white truncate tracking-tight">
-                {item.title}
-            </h3>
-            <p className="text-[11px] font-mono text-white/40 truncate uppercase tracking-wider mt-0.5">
-                {item.trackCount} songs -- {item.creator}
-            </p>
-        </button>
+        />
     );
 
     const renderGenreCard = (genre: Genre) => (
@@ -267,8 +324,14 @@ export default function BrowsePlaylistsPage() {
 
     if (isLoading && !selectedGenre && !hasSearched) {
         return (
-            <div className="flex items-center justify-center min-h-screen bg-[var(--bg-primary)]">
-                <GradientSpinner size="md" />
+            <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] to-black px-4 md:px-8 py-8">
+                <div className="max-w-[1800px] mx-auto">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-6">
+                        {Array.from({ length: 21 }).map((_, i) => (
+                            <SkeletonCard key={i} />
+                        ))}
+                    </div>
+                </div>
             </div>
         );
     }
@@ -517,6 +580,14 @@ export default function BrowsePlaylistsPage() {
                                                     "featured",
                                                 ),
                                             )}
+                                            {isLoadingMore &&
+                                                Array.from({ length: 7 }).map(
+                                                    (_, i) => (
+                                                        <SkeletonCard
+                                                            key={`more-${i}`}
+                                                        />
+                                                    ),
+                                                )}
                                         </div>
                                         {playlists.length >= 20 && (
                                             <p className="text-center text-[10px] font-mono text-white/20 mt-8 uppercase tracking-wider">
