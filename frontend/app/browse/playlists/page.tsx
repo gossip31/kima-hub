@@ -69,13 +69,23 @@ function SectionHeader({
     );
 }
 
-// How far ahead of the viewport to start loading covers, expressed in
-// viewport-heights so the look-ahead scales with screen size. IntersectionObserver
-// rootMargin percentages resolve against the root (viewport) height for the
-// top/bottom margins. Larger = more proactive, at the cost of loading more
-// off-screen covers up front.
+// Preload covers this many scroll-container heights ahead, so the look-ahead
+// scales with screen size. Larger = more proactive, at the cost of loading
+// more off-screen covers up front.
 const COVER_PRELOAD_VIEWPORTS = 1.5;
-const COVER_PRELOAD_MARGIN = `${COVER_PRELOAD_VIEWPORTS * 100}% 0px`;
+
+// The page content scrolls inside a nested <main> (overflow-y-auto), not the
+// window — so the observer must use that element as its root, or rootMargin
+// can't see past its clipped fold. Walk up to the nearest scrolling ancestor.
+function getScrollParent(el: HTMLElement | null): HTMLElement | null {
+    let node = el?.parentElement ?? null;
+    while (node) {
+        const oy = getComputedStyle(node).overflowY;
+        if (oy === "auto" || oy === "scroll" || oy === "overlay") return node;
+        node = node.parentElement;
+    }
+    return null;
+}
 
 // A single browse cover card. An IntersectionObserver starts loading the cover
 // well before it scrolls into view (proactive look-ahead, independent of the
@@ -96,6 +106,8 @@ function PlaylistCard({
         if (near) return;
         const el = ref.current;
         if (!el) return;
+        const root = getScrollParent(el);
+        const vh = root?.clientHeight || window.innerHeight;
         const observer = new IntersectionObserver(
             (entries) => {
                 if (entries.some((e) => e.isIntersecting)) {
@@ -103,7 +115,10 @@ function PlaylistCard({
                     observer.disconnect();
                 }
             },
-            { rootMargin: COVER_PRELOAD_MARGIN },
+            {
+                root: root ?? null,
+                rootMargin: `${Math.round(COVER_PRELOAD_VIEWPORTS * vh)}px 0px`,
+            },
         );
         observer.observe(el);
         return () => observer.disconnect();
