@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import {
@@ -69,9 +69,15 @@ function SectionHeader({
     );
 }
 
-// A single browse cover card. The cover fades in once it loads, and
-// content-visibility lets the browser skip rendering/painting cards that are
-// off-screen, so a large grid stays cheap to scroll.
+// How far ahead of the viewport (in px) to start loading covers. Larger =
+// more proactive (images ready before you scroll to them), at the cost of
+// loading more off-screen images up front.
+const COVER_PRELOAD_MARGIN = "1200px 0px";
+
+// A single browse cover card. An IntersectionObserver starts loading the cover
+// well before it scrolls into view (proactive look-ahead, independent of the
+// browser's connection-aware native lazy distance); the image then fades in.
+// Cards further than the margin render only a lightweight placeholder.
 function PlaylistCard({
     item,
     onClick,
@@ -79,30 +85,52 @@ function PlaylistCard({
     item: PlaylistPreview;
     onClick: () => void;
 }) {
+    const ref = useRef<HTMLButtonElement>(null);
+    const [near, setNear] = useState(false);
     const [loaded, setLoaded] = useState(false);
+
+    useEffect(() => {
+        if (near) return;
+        const el = ref.current;
+        if (!el) return;
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries.some((e) => e.isIntersecting)) {
+                    setNear(true);
+                    observer.disconnect();
+                }
+            },
+            { rootMargin: COVER_PRELOAD_MARGIN },
+        );
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, [near]);
+
     return (
         <button
+            ref={ref}
             onClick={onClick}
-            className="group cursor-pointer text-left w-full [content-visibility:auto] [contain-intrinsic-size:auto_240px]"
+            className="group cursor-pointer text-left w-full"
         >
             <div className="relative aspect-square mb-2.5 rounded-lg overflow-hidden bg-[var(--bg-primary)] border border-white/10 group-hover:border-[#a855f7]/40 group-hover:shadow-xl group-hover:shadow-[#a855f7]/10 transition-all duration-300">
-                {item.imageUrl ? (
+                {!item.imageUrl ? (
+                    <div className="w-full h-full flex items-center justify-center">
+                        <Music2 className="w-12 h-12 text-white/10" />
+                    </div>
+                ) : near ? (
                     <Image
                         src={item.imageUrl}
                         alt={item.title}
                         fill
                         sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, (max-width: 1280px) 20vw, (max-width: 1536px) 16vw, 14vw"
+                        loading="eager"
                         onLoad={() => setLoaded(true)}
                         className={`object-cover group-hover:scale-105 transition-[transform,opacity] duration-300 ${
                             loaded ? "opacity-100" : "opacity-0"
                         }`}
                         unoptimized
                     />
-                ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                        <Music2 className="w-12 h-12 text-white/10" />
-                    </div>
-                )}
+                ) : null}
 
                 {/* Hover accent line */}
                 <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#a855f7] to-[#c026d3] transform scale-x-0 group-hover:scale-x-100 transition-transform duration-150 origin-center" />
